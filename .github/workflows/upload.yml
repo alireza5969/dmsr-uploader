@@ -3,16 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'List pending files without sending anything'
+        description: "List pending files without sending anything"
         type: boolean
-        default: true
+        default: false
       max_files:
-        description: 'Maximum send attempts (0 = all within time budget)'
+        description: "Maximum send attempts (0 = all within time budget)"
         type: string
-        default: '5'
-  # Uncomment ONLY after the first live test succeeds.
-  # schedule:
-  #   - cron: '17 */6 * * *'
+        default: "0"
+  schedule:
+    - cron: "17 */6 * * *"
 permissions:
   contents: write
 concurrency:
@@ -28,9 +27,9 @@ jobs:
       SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
       TG_TOKEN: ${{ secrets.TG_TOKEN }}
       CHAT_ID: ${{ secrets.CHAT_ID }}
-      TIME_BUDGET_MIN: '300'
+      TIME_BUDGET_MIN: "300"
       MAX_FILES: ${{ inputs.max_files || '0' }}
-      PYTHONUNBUFFERED: '1'
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v5
         with:
