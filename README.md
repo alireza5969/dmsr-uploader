@@ -6,7 +6,7 @@ Downloads pending supplements from `alireza5969/dmsr-supp` at a fixed source com
 
 1. Disable the old upload workflow/job, let any running upload finish and push its final `upload_cache.txt`, then check that the last push succeeded. Do not run old and new uploaders concurrently against the same chat. Disabling a workflow does not necessarily stop a run already in progress.
 2. Create a new repository, for example `dmsr-uploader`, with `main` as its default branch. Extract this ZIP and put its **contents** in the new repository root. Include the hidden `.github` directory. Do not commit the ZIP itself or nest the project under another folder.
-3. Add eight Actions secrets: `TG_TOKEN_FZM`, `TG_TOKEN_AJK`, `TG_TOKEN_MAS`, `TG_TOKEN_KF` and `CHAT_ID_FZM`, `CHAT_ID_AJK`, `CHAT_ID_MAS`, `CHAT_ID_KF`. Each token must belong to the bot added as an administrator to its corresponding reviewer channel. Do not put credentials in files.
+3. Add eight Actions secrets: `TG_TOKEN_FZM`, `TG_TOKEN_AJK`, `TG_TOKEN_MAS`, `TG_TOKEN_KF` and `CHAT_ID_FZM`, `CHAT_ID_AJK`, `CHAT_ID_MAS`, `CHAT_ID_KF`. Each token must belong to the bot added as an administrator to its corresponding reviewer channel. **Set `CHAT_ID_FZM` to the exact existing channel ID already recorded in `state/metadata.json`** (`-1003920194277` in the current repository); do not create a replacement channel for fzm. The uploader now aborts if this value changes, preventing accidental re-upload of fzm's existing files. Do not put credentials in files.
 4. The source is currently public, so no source token is needed. If it becomes private, add `SOURCE_TOKEN`: a fine-grained token with Contents: read for the source repo. The new repo's built-in `GITHUB_TOKEN` cannot automatically read a different private repository. Private-source file downloads use the GitHub Contents API, so its rate limits can become relevant for small files.
 5. Under Settings → Actions → General, allow the workflow to write repository contents. Branch rules must allow the workflow bot to push checkpoints to the default branch. The script verifies checkpoint persistence before sending any documents. Do not edit this branch during an upload run.
 6. Open Actions → Upload stored supplements to Telegram → Run workflow. Keep `dry_run=true`. Inspect the discovered source commit, pending count and sample captions. This reads the source and cache but does not send or persist migration state.
@@ -50,7 +50,8 @@ The persistent files are:
 - `state/metadata.json`: source repo, destination chat and migration commit.
 - `state/legacy_uploaded.txt`: one-time imported success cache.
 - `state/uploads.jsonl`: the original append-only status journal (path/hash, status, timestamp and Telegram message/file IDs on success). It is read-only history once sharding is in use.
-- `state/uploads.shard<N>.jsonl`: the same kind of journal, one file per parallel bot.
+- `state/uploads.shard<N>.jsonl`: legacy modulo-shard journals, retained for backward-compatible reads.
+- `state/uploads.reviewer.<reviewer>.jsonl`: the active append-only journal for each reviewer/bot.
 
 The script commits these small files every 25 send attempts and on normal exit/error. It pulls and pushes only the new repository. It uses Git as durable state, **not an evictable Actions cache**. A recovery artifact (one per bot) is also retained for 30 days when the workflow's final steps run. The journal/history will still grow gradually; it contains no document payloads. A private uploader repo is appropriate if you do not want its chat ID, paths and Telegram IDs publicly readable.
 
@@ -75,7 +76,7 @@ python3 -m unittest discover -s tests -v
 python3 uploader.py             # read-only discovery and migration preview
 python3 uploader.py --run       # requires secrets in environment and configured Git push access
 python3 uploader.py --checkpoint
-SHARDS=4 SHARD=1 python3 uploader.py   # preview what bot 1 of 4 would send
+REVIEWER=ajk CHAT_ID=-100... python3 uploader.py   # preview a specific reviewer's destination
 ```
 
 Optional environment variables: `SOURCE_REPO` (default `alireza5969/dmsr-supp`), `SOURCE_BRANCH` (`main`), `SOURCE_TOKEN` (private source only), `TIME_BUDGET_MIN` (`300`), `MAX_FILES` (`0`, unlimited within budget), `REVIEWER` (`fzm`, `ajk`, `mas`, or `kf`), `SEND_INTERVAL` (`3.1`, seconds between send starts for one bot). The shipped workflow defaults manual live runs to five attempts. Change source settings in workflow env if needed. State is tied to one source/destination; use a new repo/state for a different destination rather than recycling its success cache.
