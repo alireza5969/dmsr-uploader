@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import random
 import re
 import subprocess
 import tempfile
@@ -17,6 +18,12 @@ import uuid
 
 STATE = Path('state')
 LIMIT = 50_000_000  # conservative interpretation of Telegram's 50 MB limit
+# Parallel bots: each job (shard) owns the articles whose number % SHARDS == SHARD.
+SHARDS = int(os.getenv('SHARDS', '1'))
+SHARD = int(os.getenv('SHARD', '0'))
+# Minimum gap between the *starts* of two Telegram send requests from one bot.
+SEND_INTERVAL = float(os.getenv('SEND_INTERVAL', '3.1'))
+PUSH_ATTEMPTS = 6
 
 
 def log(message):
@@ -38,12 +45,23 @@ def checkpoint():
     git('add', '--', 'state')
     r = subprocess.run(['git', 'diff', '--cached', '--quiet'], capture_output=True)
     if r.returncode == 1:
-        git('commit', '-m', 'uploader: checkpoint')
+        suffix = f' (shard {SHARD}/{SHARDS})' if SHARDS > 1 else ''
+        git('commit', '-m', 'uploader: checkpoint' + suffix)
     elif r.returncode:
         raise RuntimeError('Cannot inspect staged progress')
-    # Only the small uploader repo is fetched. Never force-push.
-    git('pull', '--rebase')
-    git('push')
+    # Only the small uploader repo is fetched. Never force-push. Parallel shards push to
+    # the same branch, so a rejected push is expected: re-sync and retry with jitter.
+    # Shards write different journal files, so the rebase itself should not conflict.
+    for attempt in range(PUSH_ATTEMPTS):
+        try:
+            git('pull', '--rebase')
+            git('push')
+            break
+        except RuntimeError:
+            subprocess.run(['git', 'rebase', '--abort'], capture_output=True)
+            if attempt == PUSH_ATTEMPTS - 1:
+                raise
+            time.sleep(random.uniform(2, 10))
     log(f'checkpoint_seconds={time.monotonic()-start:.2f}')
 
 
@@ -132,13 +150,39 @@ def inventory(files):
     return result
 
 
+def mine(entry):
+    """True if this shard owns the entry. Whole articles stay together on one bot."""
+    number = int(PurePosixPath(entry['path']).parent.name.split('.')[0])
+    return number % SHARDS == SHARD
+
+
+def journal_path():
+    # A single-bot setup keeps the original file name; shards each get their own file
+    # so parallel jobs never edit (and never merge-conflict on) the same file.
+    return STATE / ('uploads.jsonl' if SHARDS == 1 else f'uploads.shard{SHARD}.jsonl')
+
+
+def journal_files():
+    files = []
+    original = STATE / 'uploads.jsonl'
+    if original.exists():
+        files.append(original)
+    files.extend(sorted(STATE.glob('uploads.shard*.jsonl')))
+    return files
+
+
 def load_state():
-    latest = {}
-    journal = STATE / 'uploads.jsonl'
-    if journal.exists():
+    events = []
+    for journal in journal_files():
         for line in journal.read_text().splitlines():
-            event = json.loads(line)  # fail closed on a damaged journal
-            latest[event['path']] = event
+            events.append(json.loads(line))  # fail closed on a damaged journal
+    # Journals are merged by timestamp so the newest event for a path wins even if the
+    # shard count changed between runs and a path moved to another shard's file.
+    # sorted() is stable, so events with equal timestamps keep their file order.
+    events.sort(key=lambda event: event.get('time', ''))
+    latest = {}
+    for event in events:
+        latest[event['path']] = event
     return latest
 
 
@@ -146,7 +190,7 @@ def record(entry, status, **extra):
     STATE.mkdir(exist_ok=True)
     event = {k: entry[k] for k in ('path', 'sha')}
     event.update(status=status, time=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **extra)
-    with (STATE / 'uploads.jsonl').open('a') as f:
+    with journal_path().open('a') as f:
         f.write(json.dumps(event, ensure_ascii=True) + '\n')
         f.flush()
         os.fsync(f.fileno())
@@ -162,6 +206,18 @@ def pending(entry, old, legacy):
     if event['status'] in ('inflight', 'uncertain'):
         return False  # requires human reconciliation, even if content changed
     return event['sha'] != entry['sha'] or event['status'] == 'failed'
+
+
+def pace(last_send, interval=SEND_INTERVAL):
+    """Sleep only for what remains of `interval` since the previous send started.
+
+    Download time and journaling already count towards the gap, so they no longer
+    stack on top of a fixed sleep. Returns the new send-start timestamp.
+    """
+    wait = last_send + interval - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    return time.monotonic()
 
 
 def multipart(chat, caption, filename, data):
@@ -219,6 +275,8 @@ def main():
     parser.add_argument('--run', action='store_true', help='Send documents; default is read-only plan')
     parser.add_argument('--checkpoint', action='store_true')
     args = parser.parse_args()
+    if SHARDS < 1 or not 0 <= SHARD < SHARDS:
+        raise ValueError('SHARDS must be >= 1 and SHARD must satisfy 0 <= SHARD < SHARDS')
     if args.checkpoint:
         checkpoint()
         return
@@ -229,6 +287,9 @@ def main():
         raise ValueError('TG_TOKEN and CHAT_ID are required')
     deadline = time.monotonic() + float(os.getenv('TIME_BUDGET_MIN', '300')) * 60
     meta_path = STATE / 'metadata.json'
+    if args.run and SHARDS > 1 and not meta_path.exists():
+        # Migration writes shared files; parallel jobs would race to create them.
+        raise ValueError('Complete the first live run with SHARDS=1 before sharding')
     identity = {'source_repo': repo, 'chat_id': chat}
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
@@ -247,9 +308,11 @@ def main():
     legacy = {p.strip().removeprefix('./').replace('\\', '/') for p in legacy_bytes.decode().splitlines() if p.strip()}
     old = load_state()
     entries = inventory(files)
-    queue = [e for e in entries if pending(e, old, legacy)]
+    owned = [e for e in entries if mine(e)]
+    queue = [e for e in owned if pending(e, old, legacy)]
     held = sum(e['status'] in ('inflight', 'uncertain') for e in old.values())
-    log(f'eligible={len(entries)} legacy_uploaded={len(legacy)} pending={len(queue)} held_for_review={held}')
+    log(f'shard={SHARD}/{SHARDS} eligible={len(entries)} shard_eligible={len(owned)} '
+        f'legacy_uploaded={len(legacy)} pending={len(queue)} held_for_review={held}')
     if not args.run:
         for entry in queue[:5]:
             log(json.dumps(entry))
@@ -259,9 +322,10 @@ def main():
         legacy_path.write_bytes(legacy_bytes)
         meta_path.write_text(json.dumps(dict(identity, imported_from_commit=commit), indent=2) + '\n')
     checkpoint()  # verify persistence works BEFORE any Telegram side effect
-    maximum = int(os.getenv('MAX_FILES', '0'))  # zero = all within time budget
+    maximum = int(os.getenv('MAX_FILES', '0'))  # zero = all within time budget; per shard
     attempts = 0
     failures = 0
+    last_send = float('-inf')
     try:
         for entry in queue:
             if time.monotonic() + 750 > deadline or (maximum and attempts >= maximum):
@@ -287,6 +351,9 @@ def main():
                     raise RuntimeError('Five consecutive failures; inspect journal')
                 continue
             download_seconds = time.monotonic() - start
+            # Pace before journaling 'inflight' so an interruption while waiting
+            # does not leave an entry held for manual review.
+            last_send = pace(last_send)
             record(entry, 'inflight')
             start = time.monotonic()
             status, details = send(entry, data, deadline)
@@ -300,8 +367,7 @@ def main():
             if attempts % 25 == 0:
                 checkpoint()
             if status == 'uncertain' or failures >= 5:
-                raise RuntimeError('Upload stopped; inspect state/uploads.jsonl')
-            time.sleep(3.1)
+                raise RuntimeError('Upload stopped; inspect the shard journal in state/')
     finally:
         checkpoint()
 

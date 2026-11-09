@@ -1,4 +1,4 @@
-import io, json, os, tempfile, time, unittest, urllib.error
+import io, json, os, tempfile, time, types, unittest, urllib.error
 from pathlib import Path
 from unittest.mock import patch
 import uploader as u
@@ -57,3 +57,81 @@ class Tests(unittest.TestCase):
         boundary,body=u.multipart('123','caption','a"\r\n.pdf',b'content')
         self.assertIn(b'filename="a___.pdf"',body)
         self.assertTrue(body.endswith(('--'+boundary+'--\r\n').encode()))
+
+    # --- parallel bots (sharding) ---
+    def test_unsharded_owns_everything(self):
+        self.assertEqual((u.SHARDS,u.SHARD),(1,0))
+        self.assertTrue(u.mine(self.e))
+    def test_shard_partition(self):
+        es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/{c}.pdf',sha=f'{n}{c}') for n in range(1,41) for c in 'ab'])
+        owners=[]
+        for shard in range(4):
+            with patch.object(u,'SHARDS',4),patch.object(u,'SHARD',shard):
+                owners.append({e['path'] for e in es if u.mine(e)})
+        self.assertEqual(set().union(*owners),{e['path'] for e in es})  # nothing dropped
+        self.assertEqual(sum(map(len,owners)),len(es))                   # nothing duplicated
+        articles=[{p.split('/')[1] for p in group} for group in owners]
+        for i,a in enumerate(articles):                                  # an article never splits across bots
+            for b in articles[i+1:]: self.assertFalse(a&b)
+        self.assertTrue(all(len(group)>0 for group in owners))
+    def test_shards_can_grow(self):
+        es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/a.pdf',sha=str(n)) for n in range(1,61)])
+        for count in (2,4,6,8):
+            seen=[]
+            for shard in range(count):
+                with patch.object(u,'SHARDS',count),patch.object(u,'SHARD',shard):
+                    seen+= [e['path'] for e in es if u.mine(e)]
+            self.assertEqual(sorted(seen),sorted(e['path'] for e in es))
+    def test_sharded_journal_file(self):
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
+            with patch.object(u,'SHARDS',4),patch.object(u,'SHARD',2): u.record(self.e,'sent',message_id=9)
+            self.assertTrue((Path(t)/'uploads.shard2.jsonl').exists())
+            self.assertFalse((Path(t)/'uploads.jsonl').exists())
+            self.assertEqual(u.load_state()[self.e['path']]['message_id'],9)
+    def test_journals_merge_by_time(self):
+        # A path can move to another shard's journal if SHARDS changes; newest event must win
+        # regardless of which file sorts last.
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
+            def write(name,status,when):
+                with (Path(t)/name).open('a') as f:
+                    f.write(json.dumps(dict(path=self.e['path'],sha='abc',status=status,time=when))+'\n')
+            write('uploads.jsonl','failed','2026-11-08T09:00:00Z')
+            write('uploads.shard1.jsonl','sent','2026-11-09T10:00:00Z')
+            write('uploads.shard3.jsonl','failed','2026-11-09T09:00:00Z')
+            self.assertEqual(u.load_state()[self.e['path']]['status'],'sent')
+    def test_equal_timestamps_keep_file_order(self):
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
+            u.record(self.e,'inflight'); u.record(self.e,'uncertain')
+            with patch.object(u.time,'strftime',return_value='2026-11-09T10:00:00Z'): u.record(self.e,'sent')
+            self.assertEqual(u.load_state()[self.e['path']]['status'],'sent')
+    def test_checkpoint_retries_rejected_push(self):
+        calls=[]
+        def fake_git(*args,**kw):
+            calls.append(args[0])
+            if args[0]=='push' and calls.count('push')<3: raise RuntimeError('Git operation failed: push')
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)), patch.object(u,'git',side_effect=fake_git), \
+             patch.object(u.subprocess,'run',return_value=types.SimpleNamespace(returncode=0)), patch.object(u.time,'sleep') as sleep:
+            u.checkpoint()
+        self.assertEqual(calls.count('push'),3); self.assertEqual(calls.count('pull'),3)
+        self.assertEqual(sleep.call_count,2)
+        for call in sleep.call_args_list: self.assertTrue(2<=call[0][0]<=10)
+    def test_checkpoint_gives_up(self):
+        def fake_git(*args,**kw):
+            if args[0]=='push': raise RuntimeError('Git operation failed: push')
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)), patch.object(u,'git',side_effect=fake_git) as git, \
+             patch.object(u.subprocess,'run',return_value=types.SimpleNamespace(returncode=0)), patch.object(u.time,'sleep'):
+            with self.assertRaises(RuntimeError): u.checkpoint()
+        self.assertEqual([c[0][0] for c in git.call_args_list].count('push'),u.PUSH_ATTEMPTS)
+
+    # --- pacing ---
+    def test_pacing_counts_elapsed_time(self):
+        with patch.object(u.time,'monotonic',side_effect=[10.0,12.1]),patch.object(u.time,'sleep') as sleep:
+            self.assertEqual(u.pace(9.0,3.1),12.1)
+        self.assertAlmostEqual(sleep.call_args[0][0],2.1)
+    def test_pacing_no_wait_when_already_slow(self):
+        with patch.object(u.time,'monotonic',side_effect=[20.0,20.0]),patch.object(u.time,'sleep') as sleep:
+            u.pace(10.0,3.1)
+        sleep.assert_not_called()
+    def test_first_send_does_not_wait(self):
+        with patch.object(u.time,'sleep') as sleep: u.pace(float('-inf'),3.1)
+        sleep.assert_not_called()
