@@ -20,6 +20,8 @@ Downloads pending supplements from `alireza5969/dmsr-supp` at a fixed source com
 The workflow runs four independent jobs, one for each reviewer. Routing uses the fixed article-number ranges, not modulo sharding:
 
 - `fzm`: 1–6,164
+
+The existing fzm channel is already complete through article **04443 inclusive**. The fzm job excludes every file belonging to articles 00001–04443, even if an individual path is missing from the old `upload_cache.txt`. Article 04444 onward is processed normally. This cutoff applies only to fzm; it does not affect the other reviewers.
 - `ajk`: 6,165–12,012
 - `mas`: 12,013–17,937
 - `kf`: 17,938–23,968
