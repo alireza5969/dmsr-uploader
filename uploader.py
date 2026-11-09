@@ -202,7 +202,7 @@ def record(entry, status, **extra):
 def validate_reviewer_destination(meta, reviewer, chat):
     """Protect the existing shared channel from accidental re-import duplicates."""
     original_chat = meta.get('chat_id')
-    if reviewer == 'fzm' and original_chat and chat != original_chat:
+    if reviewer == 'fzm' and chat and original_chat and chat != original_chat:
         raise ValueError('CHAT_ID_FZM must match the existing channel recorded in state/metadata.json')
 
 
