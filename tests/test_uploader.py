@@ -21,6 +21,14 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(es),2)
         remaining=[e for e in es if u.pending(e,{}, {es[0]['path']})]
         self.assertIn('Sequence number: 2/2',remaining[0]['caption'])
+    def test_fzm_must_keep_existing_channel(self):
+        meta={'chat_id':'-1003920194277'}
+        u.validate_reviewer_destination(meta,'fzm','-1003920194277')
+        with self.assertRaisesRegex(ValueError,'CHAT_ID_FZM'):
+            u.validate_reviewer_destination(meta,'fzm','-100999')
+        # Other reviewers are expected to use their own new destinations.
+        u.validate_reviewer_destination(meta,'ajk','-100999')
+
     def test_resume(self):
         for status in ['sent','skipped','uncertain','inflight']:
             self.assertFalse(u.pending(self.e,{self.e['path']:dict(self.e,status=status,chat_id='-100123')},set()))
