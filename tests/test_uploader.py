@@ -10,6 +10,11 @@ class Response(io.BytesIO):
 class Tests(unittest.TestCase):
     def setUp(self):
         p=patch.dict(os.environ,TG_TOKEN='fake',CHAT_ID='-100123'); p.start(); self.addCleanup(p.stop)
+        # The workflow exports SHARDS/SHARD, which uploader reads at import. Pin the
+        # single-bot defaults so tests behave the same on every shard job and locally;
+        # sharding tests below override these explicitly.
+        for name,value in (('SHARDS',1),('SHARD',0)):
+            q=patch.object(u,name,value); q.start(); self.addCleanup(q.stop)
         self.e=dict(path='data/001.PMC1/a.pdf',sha='abc',caption='test')
     def test_allocation(self):
         for n,v in [(1,'fzm'),(6164,'fzm'),(6165,'ajk'),(12012,'ajk'),(12013,'mas'),(17937,'mas'),(17938,'kf'),(23968,'kf'),(23969,'unassigned')]: self.assertEqual(u.reviewer(n),v)
