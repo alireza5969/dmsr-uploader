@@ -1,0 +1,10 @@
+{"path": "data/04001-04500/04201-04300/04227.PMC8081982/fneur-12-613758-g0003.jpg", "sha": "44eb08d915bee57ead7d5be3755e255aaaf0bc53", "status": "inflight", "time": "2026-11-09T04:22:54Z"}
+{"path": "data/04001-04500/04201-04300/04227.PMC8081982/fneur-12-613758-g0003.jpg", "sha": "44eb08d915bee57ead7d5be3755e255aaaf0bc53", "status": "failed", "time": "2026-11-09T04:22:58Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/Supplementary_Data.pdf", "sha": "4b9d6a16d36303b2c7fa657856b3203352c80cf7", "status": "inflight", "time": "2026-11-09T04:22:58Z"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/Supplementary_Data.pdf", "sha": "4b9d6a16d36303b2c7fa657856b3203352c80cf7", "status": "failed", "time": "2026-11-09T04:22:59Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g00.gif", "sha": "ab0726e8feca547a94d49a4dba6212b1f20081b7", "status": "inflight", "time": "2026-11-09T04:23:01Z"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g00.gif", "sha": "ab0726e8feca547a94d49a4dba6212b1f20081b7", "status": "failed", "time": "2026-11-09T04:23:02Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g00.jpg", "sha": "f10b09162c7504f30c6749311c18bd8003530230", "status": "inflight", "time": "2026-11-09T04:23:04Z"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g00.jpg", "sha": "f10b09162c7504f30c6749311c18bd8003530230", "status": "failed", "time": "2026-11-09T04:23:05Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g01.gif", "sha": "bd661a1d23b1b1e54133166e6a3898c0ddb47c4b", "status": "inflight", "time": "2026-11-09T04:23:07Z"}
+{"path": "data/04001-04500/04201-04300/04235.PMC8082642/etm-21-06-10055-g01.gif", "sha": "bd661a1d23b1b1e54133166e6a3898c0ddb47c4b", "status": "failed", "time": "2026-11-09T04:23:08Z", "reason": "telegram_400"}
