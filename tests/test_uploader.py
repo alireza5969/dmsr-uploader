@@ -10,8 +10,7 @@ class Response(io.BytesIO):
 class Tests(unittest.TestCase):
     def setUp(self):
         p=patch.dict(os.environ,TG_TOKEN='fake',CHAT_ID='-100123'); p.start(); self.addCleanup(p.stop)
-        # The workflow exports SHARDS/SHARD, which uploader reads at import. Pin the
-        # single-bot defaults so tests behave the same on every shard job and locally;
+        # Pin the reviewer used by this test so it behaves consistently in every job;
         # sharding tests below override these explicitly.
         q=patch.object(u,'REVIEWER_KEY','fzm'); q.start(); self.addCleanup(q.stop)
         self.e=dict(path='data/001.PMC1/a.pdf',sha='abc',caption='test')
@@ -24,11 +23,12 @@ class Tests(unittest.TestCase):
         self.assertIn('Sequence number: 2/2',remaining[0]['caption'])
     def test_resume(self):
         for status in ['sent','skipped','uncertain','inflight']:
-            self.assertFalse(u.pending(self.e,{self.e['path']:dict(self.e,status=status)},set()))
+            self.assertFalse(u.pending(self.e,{self.e['path']:dict(self.e,status=status,chat_id='-100123')},set()))
         self.assertTrue(u.pending(self.e,{self.e['path']:dict(self.e,status='failed')},set()))
-        self.assertTrue(u.pending(self.e,{self.e['path']:dict(self.e,sha='old',status='sent')},set()))
-        self.assertFalse(u.pending(self.e,{self.e['path']:dict(self.e,sha='old',status='uncertain')},set()))
-        self.assertFalse(u.pending(self.e,{}, {self.e['path']}))
+        self.assertTrue(u.pending(self.e,{self.e['path']:dict(self.e,sha='old',status='sent',chat_id='-100123')},set()))
+        self.assertFalse(u.pending(self.e,{self.e['path']:dict(self.e,sha='old',status='uncertain',chat_id='-100123')},set()))
+        self.assertTrue(u.pending(self.e,{self.e['path']:dict(self.e,status='sent',chat_id='-100999')},set(),chat='-100123'))
+        self.assertFalse(u.pending(self.e,{}, {self.e['path']},chat='-100123',legacy_chat='-100123'))
     def test_journal(self):
         with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
             u.record(self.e,'inflight'); u.record(self.e,'sent',message_id=5)
