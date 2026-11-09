@@ -259,6 +259,7 @@ def send(entry, data, deadline):
             return 'failed', {'reason': 'budget_before_request'}
         request = urllib.request.Request(url, data=body,
                     headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+        request_started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=600) as r:
                 out = json.load(r)
@@ -278,7 +279,21 @@ def send(entry, data, deadline):
         code = out.get('error_code', 0)
         if code == 429:
             rate_limited = True
-            wait = max(3.1, float(out.get('parameters', {}).get('retry_after', 60)) + 1)
+            parameters = out.get('parameters') or {}
+            retry_after = float(parameters.get('retry_after', 60))
+            wait = max(3.1, retry_after + 1)
+            # Preserve Telegram's diagnostic text: a 429 is not necessarily just
+            # the per-chat message cadence, and retry_after alone cannot identify scope.
+            log(json.dumps({
+                'event': 'telegram_429',
+                'reviewer': REVIEWER_KEY,
+                'path': entry['path'],
+                'method': 'sendDocument',
+                'attempt': attempt + 1,
+                'retry_after': retry_after,
+                'description': out.get('description'),
+                'request_seconds': round(time.monotonic() - request_started, 2),
+            }, ensure_ascii=True))
             if attempt == 4 or time.monotonic() + wait + 610 > deadline:
                 return 'failed', {'reason': 'rate_limit', 'rate_limited': True}
             log(f'telegram_rate_limit_wait_seconds={wait}')
