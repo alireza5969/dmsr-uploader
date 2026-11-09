@@ -123,9 +123,11 @@ class Tests(unittest.TestCase):
             write('uploads.shard3.jsonl','failed','2026-11-09T09:00:00Z')
             self.assertEqual(u.load_state()[self.e['path']]['status'],'sent')
     def test_equal_timestamps_keep_file_order(self):
-        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
-            u.record(self.e,'inflight'); u.record(self.e,'uncertain')
-            with patch.object(u.time,'strftime',return_value='2026-11-09T10:00:00Z'): u.record(self.e,'sent')
+        with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)), \
+             patch.object(u.time,'strftime',return_value='2026-11-09T10:00:00Z'):
+            u.record(self.e,'inflight')
+            u.record(self.e,'uncertain')
+            u.record(self.e,'sent')
             self.assertEqual(u.load_state()[self.e['path']]['status'],'sent')
     def test_checkpoint_retries_rejected_push(self):
         calls=[]
