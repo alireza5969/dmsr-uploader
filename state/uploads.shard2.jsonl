@@ -1,0 +1,10 @@
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-fig1.gif", "sha": "68d94adcc8ba5fc28933e710eff853fbf4ccf459", "status": "inflight", "time": "2026-11-09T04:22:43Z"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-fig1.gif", "sha": "68d94adcc8ba5fc28933e710eff853fbf4ccf459", "status": "failed", "time": "2026-11-09T04:22:47Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-fig1.jpg", "sha": "119ea7c340222d10737dec88111a13940a2a718f", "status": "inflight", "time": "2026-11-09T04:22:47Z"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-fig1.jpg", "sha": "119ea7c340222d10737dec88111a13940a2a718f", "status": "failed", "time": "2026-11-09T04:22:48Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-table1.gif", "sha": "257c201ba162cf5070086ccebe0128e90e2509ba", "status": "inflight", "time": "2026-11-09T04:22:50Z"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-table1.gif", "sha": "257c201ba162cf5070086ccebe0128e90e2509ba", "status": "failed", "time": "2026-11-09T04:22:51Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-table1.jpg", "sha": "daff2ad7a686a6693a96106b07e0fb7ef72b96fc", "status": "inflight", "time": "2026-11-09T04:22:53Z"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/10.1177_20480040211004416-table1.jpg", "sha": "daff2ad7a686a6693a96106b07e0fb7ef72b96fc", "status": "failed", "time": "2026-11-09T04:22:55Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/sj-pdf-1-cvd-10.1177_20480040211004416.pdf", "sha": "f7094cfcb98584266eda03f7a1325a0ae7072fad", "status": "inflight", "time": "2026-11-09T04:22:56Z"}
+{"path": "data/04001-04500/04201-04300/04246.PMC8082985/sj-pdf-1-cvd-10.1177_20480040211004416.pdf", "sha": "f7094cfcb98584266eda03f7a1325a0ae7072fad", "status": "failed", "time": "2026-11-09T04:22:58Z", "reason": "telegram_400"}
