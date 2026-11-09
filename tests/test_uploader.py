@@ -13,8 +13,7 @@ class Tests(unittest.TestCase):
         # The workflow exports SHARDS/SHARD, which uploader reads at import. Pin the
         # single-bot defaults so tests behave the same on every shard job and locally;
         # sharding tests below override these explicitly.
-        for name,value in (('SHARDS',1),('SHARD',0)):
-            q=patch.object(u,name,value); q.start(); self.addCleanup(q.stop)
+        q=patch.object(u,'REVIEWER_KEY','fzm'); q.start(); self.addCleanup(q.stop)
         self.e=dict(path='data/001.PMC1/a.pdf',sha='abc',caption='test')
     def test_allocation(self):
         for n,v in [(1,'fzm'),(6164,'fzm'),(6165,'ajk'),(12012,'ajk'),(12013,'mas'),(17937,'mas'),(17938,'kf'),(23968,'kf'),(23969,'unassigned')]: self.assertEqual(u.reviewer(n),v)
@@ -65,13 +64,14 @@ class Tests(unittest.TestCase):
 
     # --- parallel bots (sharding) ---
     def test_unsharded_owns_everything(self):
-        self.assertEqual((u.SHARDS,u.SHARD),(1,0))
+        self.assertEqual(u.REVIEWER_KEY,'fzm')
         self.assertTrue(u.mine(self.e))
     def test_shard_partition(self):
         es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/{c}.pdf',sha=f'{n}{c}') for n in range(1,41) for c in 'ab'])
         owners=[]
         for shard in range(4):
-            with patch.object(u,'SHARDS',4),patch.object(u,'SHARD',shard):
+            key=['fzm','ajk','mas','kf'][shard]
+            with patch.object(u,'REVIEWER_KEY',key):
                 owners.append({e['path'] for e in es if u.mine(e)})
         self.assertEqual(set().union(*owners),{e['path'] for e in es})  # nothing dropped
         self.assertEqual(sum(map(len,owners)),len(es))                   # nothing duplicated
@@ -81,16 +81,16 @@ class Tests(unittest.TestCase):
         self.assertTrue(all(len(group)>0 for group in owners))
     def test_shards_can_grow(self):
         es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/a.pdf',sha=str(n)) for n in range(1,61)])
-        for count in (2,4,6,8):
-            seen=[]
-            for shard in range(count):
-                with patch.object(u,'SHARDS',count),patch.object(u,'SHARD',shard):
-                    seen+= [e['path'] for e in es if u.mine(e)]
-            self.assertEqual(sorted(seen),sorted(e['path'] for e in es))
+        keys=['fzm','ajk','mas','kf']
+        seen=[]
+        for key in keys:
+            with patch.object(u,'REVIEWER_KEY',key):
+                seen += [e['path'] for e in es if u.mine(e)]
+        self.assertEqual(sorted(seen),sorted(e['path'] for e in es if int(e['path'].split('/')[1].split('.')[0]) <= 6164))
     def test_sharded_journal_file(self):
         with tempfile.TemporaryDirectory() as t, patch.object(u,'STATE',Path(t)):
-            with patch.object(u,'SHARDS',4),patch.object(u,'SHARD',2): u.record(self.e,'sent',message_id=9)
-            self.assertTrue((Path(t)/'uploads.shard2.jsonl').exists())
+            with patch.object(u,'REVIEWER_KEY','fzm'): u.record(self.e,'sent',message_id=9)
+            self.assertTrue((Path(t)/'uploads.reviewer.fzm.jsonl').exists())
             self.assertFalse((Path(t)/'uploads.jsonl').exists())
             self.assertEqual(u.load_state()[self.e['path']]['message_id'],9)
     def test_journals_merge_by_time(self):
