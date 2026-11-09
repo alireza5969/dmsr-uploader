@@ -22,7 +22,7 @@ LIMIT = 50_000_000  # conservative interpretation of Telegram's 50 MB limit
 REVIEWER_KEY = os.getenv('REVIEWER', '').strip().lower()
 REVIEWERS = {'fzm', 'ajk', 'mas', 'kf'}
 # Minimum gap between the *starts* of two Telegram send requests from one bot.
-SEND_INTERVAL = float(os.getenv('SEND_INTERVAL', '3.1'))
+SEND_INTERVAL = float(os.getenv('SEND_INTERVAL', '3.85'))
 PUSH_ATTEMPTS = 6
 
 
