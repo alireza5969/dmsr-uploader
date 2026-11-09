@@ -1,0 +1,10 @@
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/DataSheet_1.pdf", "sha": "16f480d17614bc47849162d45c43e60d1a5f20ce", "status": "inflight", "time": "2026-11-09T04:22:43Z"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/DataSheet_1.pdf", "sha": "16f480d17614bc47849162d45c43e60d1a5f20ce", "status": "failed", "time": "2026-11-09T04:22:46Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_1.tif", "sha": "48236ce33c402d8e9aa1c6258b68880ac3b00269", "status": "inflight", "time": "2026-11-09T04:22:46Z"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_1.tif", "sha": "48236ce33c402d8e9aa1c6258b68880ac3b00269", "status": "failed", "time": "2026-11-09T04:22:47Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_2.tif", "sha": "393cc7e574cbd5eab4cb82d18375e6d0527b6e03", "status": "inflight", "time": "2026-11-09T04:22:50Z"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_2.tif", "sha": "393cc7e574cbd5eab4cb82d18375e6d0527b6e03", "status": "failed", "time": "2026-11-09T04:22:50Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_3.tif", "sha": "f24b5c7eb036c6fb80a73339b523329eed5a74e7", "status": "inflight", "time": "2026-11-09T04:22:53Z"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Image_3.tif", "sha": "f24b5c7eb036c6fb80a73339b523329eed5a74e7", "status": "failed", "time": "2026-11-09T04:22:53Z", "reason": "telegram_400"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Table_1.docx", "sha": "acbd508fc801ff9f66f2c366bee5ea5b30c25767", "status": "inflight", "time": "2026-11-09T04:22:56Z"}
+{"path": "data/04001-04500/04201-04300/04229.PMC8082154/Table_1.docx", "sha": "acbd508fc801ff9f66f2c366bee5ea5b30c25767", "status": "failed", "time": "2026-11-09T04:22:56Z", "reason": "telegram_400"}
