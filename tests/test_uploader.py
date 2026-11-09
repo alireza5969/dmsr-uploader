@@ -66,20 +66,22 @@ class Tests(unittest.TestCase):
     def test_unsharded_owns_everything(self):
         self.assertEqual(u.REVIEWER_KEY,'fzm')
         self.assertTrue(u.mine(self.e))
-    def test_shard_partition(self):
-        es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/{c}.pdf',sha=f'{n}{c}') for n in range(1,41) for c in 'ab'])
+    def test_reviewer_partition(self):
+        numbers=[1,6164,6165,12012,12013,17937,17938,23968]
+        es=u.inventory([dict(path=f'data/{n:05d}.PMC{n}/{c}.pdf',sha=f'{n}{c}') for n in numbers for c in 'ab'])
         owners=[]
-        for shard in range(4):
-            key=['fzm','ajk','mas','kf'][shard]
+        for key in ['fzm','ajk','mas','kf']:
             with patch.object(u,'REVIEWER_KEY',key):
                 owners.append({e['path'] for e in es if u.mine(e)})
-        self.assertEqual(set().union(*owners),{e['path'] for e in es})  # nothing dropped
-        self.assertEqual(sum(map(len,owners)),len(es))                   # nothing duplicated
+        self.assertEqual(set().union(*owners),{e['path'] for e in es})
+        self.assertEqual(sum(map(len,owners)),len(es))
         articles=[{p.split('/')[1] for p in group} for group in owners]
-        for i,a in enumerate(articles):                                  # an article never splits across bots
-            for b in articles[i+1:]: self.assertFalse(a&b)
+        for i,a in enumerate(articles):
+            for b in articles[i+1:]:
+                self.assertFalse(a&b)
         self.assertTrue(all(len(group)>0 for group in owners))
-    def test_shards_can_grow(self):
+
+    def test_reviewer_range_selection(self):
         es=u.inventory([dict(path=f'data/{n:03d}.PMC{n}/a.pdf',sha=str(n)) for n in range(1,61)])
         keys=['fzm','ajk','mas','kf']
         seen=[]
