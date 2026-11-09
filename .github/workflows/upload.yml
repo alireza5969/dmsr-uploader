@@ -52,7 +52,7 @@ jobs:
       - name: Check bot token is configured
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         run: |
-          if [ -z "$TG_TOKEN" ]; then
+          if [ -z "$TG_TOKEN" ] || [ -z "$CHAT_ID" ]; then
             echo "::error::Both TG_TOKEN_${{ matrix.reviewer }} and CHAT_ID_${{ matrix.reviewer }} must be set"
             exit 1
           fi
