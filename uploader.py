@@ -228,9 +228,10 @@ def pending(entry, old, legacy, chat=None, legacy_chat=None):
     return event['sha'] != entry['sha'] or event['status'] == 'failed'
 
 
-def pace(last_request_end, interval=SEND_INTERVAL):
-    """Enforce a minimum quiet period after the previous Telegram request finishes."""
-    wait = last_request_end + interval - time.monotonic()
+def pace(last_send, last_request_end, interval=SEND_INTERVAL, quiet=1.5):
+    """Enforce both a start-to-start interval and a quiet period after each request."""
+    now = time.monotonic()
+    wait = max(last_send + interval, last_request_end + quiet) - now
     if wait > 0:
         time.sleep(wait)
     return time.monotonic()
@@ -345,6 +346,7 @@ def main():
     maximum = int(os.getenv('MAX_FILES', '0'))  # zero = all within time budget; per shard
     attempts = 0
     failures = 0
+    last_send = float('-inf')
     last_request_end = float('-inf')
     send_interval = SEND_INTERVAL
     successes_since_decay = 0
@@ -375,7 +377,7 @@ def main():
             download_seconds = time.monotonic() - start
             # Pace before journaling 'inflight' so an interruption while waiting
             # does not leave an entry held for manual review.
-            pace(last_request_end, send_interval)
+            last_send = pace(last_send, last_request_end, send_interval)
             record(entry, 'inflight')
             start = time.monotonic()
             status, details = send(entry, data, deadline)
