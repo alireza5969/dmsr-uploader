@@ -149,16 +149,16 @@ class Tests(unittest.TestCase):
         self.assertEqual([c[0][0] for c in git.call_args_list].count('push'),u.PUSH_ATTEMPTS)
 
     # --- pacing ---
-    def test_pacing_waits_after_previous_request_finishes(self):
+    def test_pacing_enforces_start_interval(self):
         with patch.object(u.time,'monotonic',side_effect=[10.0,12.1]),patch.object(u.time,'sleep') as sleep:
-            self.assertEqual(u.pace(9.0,3.1),12.1)
+            self.assertEqual(u.pace(9.0,float('-inf'),3.1),12.1)
         self.assertAlmostEqual(sleep.call_args[0][0],2.1)
-    def test_pacing_no_wait_when_quiet_period_elapsed(self):
+    def test_pacing_enforces_quiet_period_after_slow_request(self):
         with patch.object(u.time,'monotonic',side_effect=[20.0,20.0]),patch.object(u.time,'sleep') as sleep:
-            u.pace(10.0,3.1)
-        sleep.assert_not_called()
+            u.pace(10.0,19.0,3.1,1.5)
+        self.assertAlmostEqual(sleep.call_args[0][0],0.5)
     def test_first_send_does_not_wait(self):
-        with patch.object(u.time,'sleep') as sleep: u.pace(float('-inf'),3.1)
+        with patch.object(u.time,'sleep') as sleep: u.pace(float('-inf'),float('-inf'),3.1)
         sleep.assert_not_called()
     def test_rate_limit_is_reported_for_adaptation(self):
         error=urllib.error.HTTPError('test',429,'limited',{},io.BytesIO(json.dumps({'ok':False,'error_code':429,'parameters':{'retry_after':4}}).encode()))
