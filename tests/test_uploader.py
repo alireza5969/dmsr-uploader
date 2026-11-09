@@ -19,7 +19,7 @@ class Tests(unittest.TestCase):
     def test_sequences(self):
         es=u.inventory([dict(path='data/001.PMC1/b.pdf',sha='b'),dict(path='data/001.PMC1/a.pdf',sha='a'),dict(path='data/no.txt',sha='x')])
         self.assertEqual(len(es),2)
-        remaining=[e for e in es if u.pending(e,{}, {es[0]['path']})]
+        remaining=[e for e in es if u.pending(e,{}, {es[0]['path']}, legacy_chat='-100123')]
         self.assertIn('Sequence number: 2/2',remaining[0]['caption'])
     def test_fzm_must_keep_existing_channel(self):
         meta={'chat_id':'-1003920194277'}
