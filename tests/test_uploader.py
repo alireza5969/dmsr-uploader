@@ -1,4 +1,4 @@
-import io, json, os, tempfile, time, types, unittest, urllib.error
+import contextlib, io, json, os, tempfile, time, types, unittest, urllib.error
 from pathlib import Path
 from unittest.mock import patch
 import uploader as u
@@ -161,8 +161,13 @@ class Tests(unittest.TestCase):
         with patch.object(u.time,'sleep') as sleep: u.pace(float('-inf'),float('-inf'),3.1)
         sleep.assert_not_called()
     def test_rate_limit_is_reported_for_adaptation(self):
-        error=urllib.error.HTTPError('test',429,'limited',{},io.BytesIO(json.dumps({'ok':False,'error_code':429,'parameters':{'retry_after':4}}).encode()))
-        with patch.object(u.urllib.request,'urlopen',side_effect=[error,Response({'ok':True,'result':{'message_id':3}})]),patch.object(u.time,'sleep'):
+        error=urllib.error.HTTPError('test',429,'limited',{},io.BytesIO(json.dumps({'ok':False,'error_code':429,'description':'Too Many Requests: retry later','parameters':{'retry_after':4}}).encode()))
+        output=io.StringIO()
+        with patch.object(u.urllib.request,'urlopen',side_effect=[error,Response({'ok':True,'result':{'message_id':3}})]),patch.object(u.time,'sleep'),contextlib.redirect_stdout(output):
             status,details=u.send(self.e,b'data',time.monotonic()+1000)
         self.assertEqual(status,'sent')
         self.assertTrue(details['rate_limited'])
+        diagnostic=json.loads(output.getvalue().splitlines()[0])
+        self.assertEqual(diagnostic['event'],'telegram_429')
+        self.assertEqual(diagnostic['retry_after'],4)
+        self.assertIn('Too Many Requests',diagnostic['description'])
