@@ -279,6 +279,9 @@ def main():
     parser.add_argument('--run', action='store_true', help='Send documents; default is read-only plan')
     parser.add_argument('--checkpoint', action='store_true')
     args = parser.parse_args()
+    if args.checkpoint:
+        checkpoint()
+        return
     if REVIEWER_KEY not in REVIEWERS:
         raise ValueError('REVIEWER must be one of: fzm, ajk, mas, kf')
     repo = os.getenv('SOURCE_REPO', 'alireza5969/dmsr-supp')
