@@ -41,6 +41,10 @@ The four jobs share the repository checkpoint branch. Each writes a separate jou
 - First live run imports the source `upload_cache.txt` automatically. A failed/missing cache download aborts migration; it never silently starts from scratch. It imports at runtime, not from an old copy bundled in this ZIP.
 - The imported cache is path-based, just like the original. It cannot detect changed contents at previously uploaded legacy paths. Newly recorded successes use path and Git blob hash, so a changed file at the same path can be uploaded again. Renamed files are new paths.
 
+## Diagnosing Telegram 429 responses
+
+The uploader emits a structured `telegram_429` log event containing the reviewer, file path, method, retry attempt, Telegram `retry_after`, API error description, and request duration. The description is important: a 429 is not necessarily proof that the per-chat message cadence alone was exceeded. Compare these events across reviewer jobs and inspect whether the same bot or destination is used by another workflow or client. Do not assume `sendMediaGroup` bypasses message limits: an album returns multiple individual messages, and grouping may create a burst rather than reduce the number of messages Telegram accounts for.
+
 ## How it stays small
 
 A temporary `git clone --filter=blob:none --no-checkout --depth=1` retrieves the latest commit and directory metadata, with no source-file checkout or full history. `git ls-tree` enumerates paths and hashes without asking Git to retrieve blobs. Metadata is deleted after discovery. Only pending documents are fetched over HTTPS from the pinned commit, verified against their Git blob SHA-1, held temporarily in memory for multipart upload, and released. The script never commits supplementary bytes or source Git objects.
