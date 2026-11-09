@@ -199,6 +199,13 @@ def record(entry, status, **extra):
     return event
 
 
+def validate_reviewer_destination(meta, reviewer, chat):
+    """Protect the existing shared channel from accidental re-import duplicates."""
+    original_chat = meta.get('chat_id')
+    if reviewer == 'fzm' and original_chat and chat != original_chat:
+        raise ValueError('CHAT_ID_FZM must match the existing channel recorded in state/metadata.json')
+
+
 def pending(entry, old, legacy, chat=None, legacy_chat=None):
     chat = chat if chat is not None else os.getenv('CHAT_ID', '')
     # Previous success records belong to their original destination only.
@@ -295,6 +302,7 @@ def main():
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
     if meta_path.exists() and meta.get('source_repo') != repo:
         raise ValueError('State belongs to a different source repository')
+    validate_reviewer_destination(meta, REVIEWER_KEY, chat)
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='dmsr-source-') as temp:
         commit, files = source_snapshot(repo, branch, Path(temp) / 'source')
