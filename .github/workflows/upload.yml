@@ -19,24 +19,22 @@ concurrency:
   cancel-in-progress: false
 jobs:
   upload:
-    name: upload (bot ${{ matrix.shard }})
+    name: upload (${{ matrix.reviewer }})
     runs-on: ubuntu-24.04
     timeout-minutes: 340
     strategy:
       # A problem in one bot's shard must not stop the others.
       fail-fast: false
       matrix:
-        # One entry per bot. To add a bot: append the next number here and add the
-        # matching TG_TOKEN_<n> secret. SHARDS below follows the length of this list.
-        shard: [0, 1, 2, 3]
+        # One fixed reviewer/channel/bot per job.
+        reviewer: [fzm, ajk, mas, kf]
     env:
       SOURCE_REPO: alireza5969/dmsr-supp
       SOURCE_BRANCH: main
       SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
-      TG_TOKEN: ${{ secrets[format('TG_TOKEN_{0}', matrix.shard)] }}
-      CHAT_ID: ${{ secrets.CHAT_ID }}
-      SHARDS: ${{ strategy.job-total }}
-      SHARD: ${{ matrix.shard }}
+      REVIEWER: ${{ matrix.reviewer }}
+      TG_TOKEN: ${{ secrets[format('TG_TOKEN_{0}', matrix.reviewer)] }}
+      CHAT_ID: ${{ secrets[format('CHAT_ID_{0}', matrix.reviewer)] }}
       TIME_BUDGET_MIN: "300"
       MAX_FILES: ${{ inputs.max_files || '0' }}
       PYTHONUNBUFFERED: "1"
@@ -55,7 +53,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         run: |
           if [ -z "$TG_TOKEN" ]; then
-            echo "::error::Secret TG_TOKEN_${{ matrix.shard }} is not set"
+            echo "::error::Both TG_TOKEN_${{ matrix.reviewer }} and CHAT_ID_${{ matrix.reviewer }} must be set"
             exit 1
           fi
       - name: Preview pending uploads
@@ -72,7 +70,7 @@ jobs:
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) }}
         uses: actions/upload-artifact@v4
         with:
-          name: uploader-state-${{ github.run_id }}-${{ github.run_attempt }}-bot${{ matrix.shard }}
+          name: uploader-state-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.reviewer }}
           path: state/
           if-no-files-found: ignore
           retention-days: 30
