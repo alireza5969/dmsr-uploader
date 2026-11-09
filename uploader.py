@@ -206,6 +206,14 @@ def validate_reviewer_destination(meta, reviewer, chat):
         raise ValueError('CHAT_ID_FZM must match the existing channel recorded in state/metadata.json')
 
 
+def covered_by_existing_fzm_channel(entry, reviewer=REVIEWER_KEY):
+    """The existing fzm channel is complete through article 04443, inclusive."""
+    if reviewer != 'fzm':
+        return False
+    number = int(PurePosixPath(entry['path']).parent.name.split('.')[0])
+    return 1 <= number <= 4443
+
+
 def pending(entry, old, legacy, chat=None, legacy_chat=None):
     chat = chat if chat is not None else os.getenv('CHAT_ID', '')
     # Previous success records belong to their original destination only.
@@ -318,10 +326,13 @@ def main():
     old = load_state()
     entries = inventory(files)
     owned = [e for e in entries if mine(e)]
-    queue = [e for e in owned if pending(e, old, legacy, chat=chat, legacy_chat=legacy_chat)]
+    queue = [e for e in owned if not covered_by_existing_fzm_channel(e) and
+             pending(e, old, legacy, chat=chat, legacy_chat=legacy_chat)]
     held = sum(e['status'] in ('inflight', 'uncertain') for e in old.values())
+    protected = sum(covered_by_existing_fzm_channel(e) for e in owned)
     log(f'reviewer={REVIEWER_KEY} eligible={len(entries)} reviewer_eligible={len(owned)} '
-        f'legacy_uploaded={len(legacy)} pending={len(queue)} held_for_review={held}')
+        f'protected_existing_channel={protected} legacy_uploaded={len(legacy)} '
+        f'pending={len(queue)} held_for_review={held}')
     if not args.run:
         for entry in queue[:5]:
             log(json.dumps(entry))
