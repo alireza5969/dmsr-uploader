@@ -23,6 +23,7 @@ REVIEWER_KEY = os.getenv('REVIEWER', '').strip().lower()
 REVIEWERS = {'fzm', 'ajk', 'mas', 'kf'}
 # Minimum gap between the *starts* of two Telegram send requests from one bot.
 SEND_INTERVAL = float(os.getenv('SEND_INTERVAL', '3.85'))
+MAX_SEND_INTERVAL = float(os.getenv('MAX_SEND_INTERVAL', '30'))
 PUSH_ATTEMPTS = 6
 
 
@@ -227,13 +228,9 @@ def pending(entry, old, legacy, chat=None, legacy_chat=None):
     return event['sha'] != entry['sha'] or event['status'] == 'failed'
 
 
-def pace(last_send, interval=SEND_INTERVAL):
-    """Sleep only for what remains of `interval` since the previous send started.
-
-    Download time and journaling already count towards the gap, so they no longer
-    stack on top of a fixed sleep. Returns the new send-start timestamp.
-    """
-    wait = last_send + interval - time.monotonic()
+def pace(last_request_end, interval=SEND_INTERVAL):
+    """Enforce a minimum quiet period after the previous Telegram request finishes."""
+    wait = last_request_end + interval - time.monotonic()
     if wait > 0:
         time.sleep(wait)
     return time.monotonic()
@@ -255,6 +252,7 @@ def send(entry, data, deadline):
     boundary, body = multipart(os.environ['CHAT_ID'], entry['caption'],
                                PurePosixPath(entry['path']).name, data)
     url = 'https://api.telegram.org/bot' + os.environ['TG_TOKEN'] + '/sendDocument'
+    rate_limited = False
     for attempt in range(5):
         if time.monotonic() + 610 > deadline:
             return 'failed', {'reason': 'budget_before_request'}
@@ -274,12 +272,14 @@ def send(entry, data, deadline):
         if out.get('ok'):
             message = out['result']
             return 'sent', {'message_id': message['message_id'],
-                            'file_id': message.get('document', {}).get('file_id')}
+                            'file_id': message.get('document', {}).get('file_id'),
+                            'rate_limited': rate_limited}
         code = out.get('error_code', 0)
         if code == 429:
+            rate_limited = True
             wait = max(3.1, float(out.get('parameters', {}).get('retry_after', 60)) + 1)
             if attempt == 4 or time.monotonic() + wait + 610 > deadline:
-                return 'failed', {'reason': 'rate_limit'}
+                return 'failed', {'reason': 'rate_limit', 'rate_limited': True}
             log(f'telegram_rate_limit_wait_seconds={wait}')
             time.sleep(wait)
             continue
@@ -345,7 +345,9 @@ def main():
     maximum = int(os.getenv('MAX_FILES', '0'))  # zero = all within time budget; per shard
     attempts = 0
     failures = 0
-    last_send = float('-inf')
+    last_request_end = float('-inf')
+    send_interval = SEND_INTERVAL
+    successes_since_decay = 0
     try:
         for entry in queue:
             if time.monotonic() + 750 > deadline or (maximum and attempts >= maximum):
@@ -373,12 +375,23 @@ def main():
             download_seconds = time.monotonic() - start
             # Pace before journaling 'inflight' so an interruption while waiting
             # does not leave an entry held for manual review.
-            last_send = pace(last_send)
+            pace(last_request_end, send_interval)
             record(entry, 'inflight')
             start = time.monotonic()
             status, details = send(entry, data, deadline)
+            last_request_end = time.monotonic()
             del data
             record(entry, status, **details)
+            if details.get('rate_limited'):
+                send_interval = min(MAX_SEND_INTERVAL, send_interval * 1.25)
+                successes_since_decay = 0
+                log(f'telegram_adaptive_interval_seconds={send_interval:.2f}')
+            elif status == 'sent':
+                successes_since_decay += 1
+                if successes_since_decay >= 20 and send_interval > SEND_INTERVAL:
+                    send_interval = max(SEND_INTERVAL, send_interval - 0.1)
+                    successes_since_decay = 0
+                    log(f'telegram_adaptive_interval_seconds={send_interval:.2f}')
             attempts += 1
             failures = 0 if status == 'sent' else failures + 1
             log(json.dumps({'path': entry['path'], 'status': status,
