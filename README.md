@@ -6,7 +6,7 @@ Downloads pending supplements from `alireza5969/dmsr-supp` at a fixed source com
 
 1. Disable the old upload workflow/job, let any running upload finish and push its final `upload_cache.txt`, then check that the last push succeeded. Do not run old and new uploaders concurrently against the same chat. Disabling a workflow does not necessarily stop a run already in progress.
 2. Create a new repository, for example `dmsr-uploader`, with `main` as its default branch. Extract this ZIP and put its **contents** in the new repository root. Include the hidden `.github` directory. Do not commit the ZIP itself or nest the project under another folder.
-3. Add Actions secrets `CHAT_ID` and one bot token per parallel bot: `TG_TOKEN_0`, `TG_TOKEN_1`, `TG_TOKEN_2`, `TG_TOKEN_3` (see [Parallel bots](#parallel-bots-sharding)). `TG_TOKEN_0` should be the same bot and destination as the original uploader. The old cache is assumed to describe this same destination. Do not put credentials in files.
+3. Add eight Actions secrets: `TG_TOKEN_FZM`, `TG_TOKEN_AJK`, `TG_TOKEN_MAS`, `TG_TOKEN_KF` and `CHAT_ID_FZM`, `CHAT_ID_AJK`, `CHAT_ID_MAS`, `CHAT_ID_KF`. Each token must belong to the bot added as an administrator to its corresponding reviewer channel. Do not put credentials in files.
 4. The source is currently public, so no source token is needed. If it becomes private, add `SOURCE_TOKEN`: a fine-grained token with Contents: read for the source repo. The new repo's built-in `GITHUB_TOKEN` cannot automatically read a different private repository. Private-source file downloads use the GitHub Contents API, so its rate limits can become relevant for small files.
 5. Under Settings → Actions → General, allow the workflow to write repository contents. Branch rules must allow the workflow bot to push checkpoints to the default branch. The script verifies checkpoint persistence before sending any documents. Do not edit this branch during an upload run.
 6. Open Actions → Upload stored supplements to Telegram → Run workflow. Keep `dry_run=true`. Inspect the discovered source commit, pending count and sample captions. This reads the source and cache but does not send or persist migration state.
@@ -15,33 +15,20 @@ Downloads pending supplements from `alireza5969/dmsr-supp` at a fixed source com
 
 **Keep the downloader if you want new files.** Disabling all workflows on the old repo freezes its stored collection. That is appropriate for uploading the existing backlog. To keep collecting new supplements, retain a download-only workflow there and remove only the upload job. This uploader never runs the downloader. Files added during a run are picked up on the next run.
 
-## Parallel bots (sharding)
+## Four reviewer channels
 
-Telegram limits how fast one bot can post to one chat, so a single bot needs roughly 70 hours for a backlog of 80,000 files. The workflow therefore runs **one job per bot** (a matrix over `shard`). Each job handles only the articles whose number satisfies `number % SHARDS == SHARD`. An article's files always go through the same bot, in order, and no two bots ever handle the same file.
+The workflow runs four independent jobs, one for each reviewer. Routing uses the fixed article-number ranges, not modulo sharding:
 
-**Setup**
+- `fzm`: 1–6,164
+- `ajk`: 6,165–12,012
+- `mas`: 12,013–17,937
+- `kf`: 17,938–23,968
 
-1. Create each extra bot with @BotFather and add it to the destination chat as an administrator that is allowed to post messages.
-2. Add the secrets `TG_TOKEN_0` … `TG_TOKEN_3`. `TG_TOKEN_0` is the original bot's token. The previous `TG_TOKEN` secret is no longer read.
-3. Run with `dry_run=true` first. Each job logs `shard=N/4` and how many files it owns, so you can confirm the split. Then run with `max_files=5` (five attempts *per bot*) and check that every bot posted to the chat.
+Each job reads its matching `TG_TOKEN_<REVIEWER>` and `CHAT_ID_<REVIEWER>` Actions secrets. Add each bot to its own channel as an administrator with permission to post. Numbers outside these ranges are not uploaded.
 
-**Adding more bots.** Append the next number to the `shard:` list in `.github/workflows/upload.yml` and add the matching `TG_TOKEN_<n>` secret. `SHARDS` follows the length of the list automatically. Changing the number of bots between runs is safe: what has been sent is tracked per path, so only unsent articles are redistributed. Do not change the matrix while a run is in progress.
+Each reviewer writes to `state/uploads.reviewer.<reviewer>.jsonl`. Previous journals remain readable. Journal events record their destination chat ID; an event from a different chat does not suppress delivery to a new reviewer channel. The imported legacy cache only suppresses a file when its original chat ID matches the current destination. Files previously delivered to the old shared channel are therefore eligible for delivery to the new reviewer channels.
 
-**How it stays safe**
-
-- Each shard writes its own journal, `state/uploads.shard<N>.jsonl`, so parallel jobs never edit the same file. The original `state/uploads.jsonl` is still read. All journals are merged by their `time` field and the newest event for a path wins.
-- Checkpoint pushes to the shared branch are retried (up to 6 attempts, random 2–10 second pauses) when another shard pushes first.
-- `fail-fast` is off: a shard that stops (for example on an `uncertain` upload) does not stop the other bots.
-- `SHARDS > 1` refuses to start if `state/metadata.json` does not exist yet, so parallel jobs cannot race to create the shared migration files. Complete the first live run with one bot first (this repository already has that state).
-- A missing `TG_TOKEN_<n>` secret fails only that shard, with a clear error.
-
-**Things to know**
-
-- Telegram does not document whether chat flood limits are counted per bot or per chat. They appear to be per bot, so each bot should get its own budget. Watch for `telegram_rate_limit_wait_seconds` in the logs; sustained waits with several bots mean the assumption does not hold for your chat, and you should use fewer bots.
-- `MAX_FILES` and `TIME_BUDGET_MIN` apply to each bot separately.
-- Files from different articles will interleave in the chat. There is no global order any more.
-- Every shard job is billed separately for its runtime on private repositories. The total work is the same, it just finishes sooner.
-- Sends from one bot are paced by `SEND_INTERVAL` (default 3.1 s), measured from the start of one request to the start of the next.
+The four jobs share the repository checkpoint branch. Each writes a separate journal and uses the existing pull/rebase/push retry logic to preserve concurrent progress. Do not run overlapping workflow runs from another repository against these same bots/channels.
 
 ## What it preserves
 
@@ -91,7 +78,7 @@ python3 uploader.py --checkpoint
 SHARDS=4 SHARD=1 python3 uploader.py   # preview what bot 1 of 4 would send
 ```
 
-Optional environment variables: `SOURCE_REPO` (default `alireza5969/dmsr-supp`), `SOURCE_BRANCH` (`main`), `SOURCE_TOKEN` (private source only), `TIME_BUDGET_MIN` (`300`), `MAX_FILES` (`0`, unlimited within budget), `SHARDS` (`1`, number of parallel bots), `SHARD` (`0`, this bot's index from 0 to `SHARDS`-1), `SEND_INTERVAL` (`3.1`, seconds between send starts for one bot). The shipped workflow defaults manual live runs to five attempts. Change source settings in workflow env if needed. State is tied to one source/destination; use a new repo/state for a different destination rather than recycling its success cache.
+Optional environment variables: `SOURCE_REPO` (default `alireza5969/dmsr-supp`), `SOURCE_BRANCH` (`main`), `SOURCE_TOKEN` (private source only), `TIME_BUDGET_MIN` (`300`), `MAX_FILES` (`0`, unlimited within budget), `REVIEWER` (`fzm`, `ajk`, `mas`, or `kf`), `SEND_INTERVAL` (`3.1`, seconds between send starts for one bot). The shipped workflow defaults manual live runs to five attempts. Change source settings in workflow env if needed. State is tied to one source/destination; use a new repo/state for a different destination rather than recycling its success cache.
 
 ## Inspection findings, 6 November 2026
 
@@ -140,7 +127,7 @@ Use a fixed runner such as `ubuntu-24.04` and a tested fixed R version to avoid 
 
 ## Validation and references
 
-Twenty-three offline tests cover reviewer boundaries, stable sequence counts across resume, path/hash deduplication, migration skips, journal corruption, multipart filename escaping, size bounds, rate-limit retries, ambiguous responses and budget behavior. For parallel bots they also cover shard partitioning (no file dropped or duplicated, articles never split, the bot count can grow), per-shard journals merged by timestamp, checkpoint push retries, and send pacing. Four concurrent checkpoint pushes to one local bare Git remote lost no events and had no failed pushes. Live read-only discovery succeeded against the public source. A real pending GIF download/hash verification and a checkpoint push to a temporary local Git remote were also checked. A live oversized-file download was correctly rejected before upload. No Telegram messages were sent, no repository was modified remotely, and the workflow has not been exercised end-to-end with your secrets. In particular, the multi-bot rate-limit behavior has not been observed against a real chat.
+Twenty-three offline tests cover reviewer boundaries, stable sequence counts across resume, path/hash deduplication, migration skips, journal corruption, multipart filename escaping, size bounds, rate-limit retries, ambiguous responses and budget behavior. For reviewer routing they also cover the fixed ranges, separate reviewer journals, timestamp-ordered journal merging, checkpoint push retries, and send pacing. Four concurrent checkpoint pushes to one local bare Git remote lost no events and had no failed pushes. Live read-only discovery succeeded against the public source. A real pending GIF download/hash verification and a checkpoint push to a temporary local Git remote were also checked. A live oversized-file download was correctly rejected before upload. No Telegram messages were sent, no repository was modified remotely, and the workflow has not been exercised end-to-end with your secrets. In particular, the multi-bot rate-limit behavior has not been observed against a real chat.
 
 - Source: https://github.com/alireza5969/dmsr-supp
 - Run timings: https://github.com/alireza5969/dmsr-supp/actions/runs/42179482685 and https://github.com/alireza5969/dmsr-supp/actions/runs/42232018040
