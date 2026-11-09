@@ -21,6 +21,14 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(es),2)
         remaining=[e for e in es if u.pending(e,{}, {es[0]['path']}, legacy_chat='-100123')]
         self.assertIn('Sequence number: 2/2',remaining[0]['caption'])
+    def test_existing_fzm_channel_cutoff_is_inclusive(self):
+        def entry(number):
+            return dict(path=f'data/{number:05d}-04500/{number:05d}.PMC1/a.pdf', sha='x')
+        self.assertTrue(u.covered_by_existing_fzm_channel(entry(1), 'fzm'))
+        self.assertTrue(u.covered_by_existing_fzm_channel(entry(4443), 'fzm'))
+        self.assertFalse(u.covered_by_existing_fzm_channel(entry(4444), 'fzm'))
+        self.assertFalse(u.covered_by_existing_fzm_channel(entry(4443), 'ajk'))
+
     def test_fzm_must_keep_existing_channel(self):
         meta={'chat_id':'-1003920194277'}
         u.validate_reviewer_destination(meta,'fzm','-1003920194277')
