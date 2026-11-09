@@ -18,9 +18,9 @@ import uuid
 
 STATE = Path('state')
 LIMIT = 50_000_000  # conservative interpretation of Telegram's 50 MB limit
-# Parallel bots: each job (shard) owns the articles whose number % SHARDS == SHARD.
-SHARDS = int(os.getenv('SHARDS', '1'))
-SHARD = int(os.getenv('SHARD', '0'))
+# Each job is assigned to one reviewer and its own Telegram channel.
+REVIEWER_KEY = os.getenv('REVIEWER', '').strip().lower()
+REVIEWERS = {'fzm', 'ajk', 'mas', 'kf'}
 # Minimum gap between the *starts* of two Telegram send requests from one bot.
 SEND_INTERVAL = float(os.getenv('SEND_INTERVAL', '3.1'))
 PUSH_ATTEMPTS = 6
@@ -45,7 +45,7 @@ def checkpoint():
     git('add', '--', 'state')
     r = subprocess.run(['git', 'diff', '--cached', '--quiet'], capture_output=True)
     if r.returncode == 1:
-        suffix = f' (shard {SHARD}/{SHARDS})' if SHARDS > 1 else ''
+        suffix = f' ({REVIEWER_KEY})' if REVIEWER_KEY else ''
         git('commit', '-m', 'uploader: checkpoint' + suffix)
     elif r.returncode:
         raise RuntimeError('Cannot inspect staged progress')
@@ -151,15 +151,14 @@ def inventory(files):
 
 
 def mine(entry):
-    """True if this shard owns the entry. Whole articles stay together on one bot."""
+    """True if this reviewer job owns the article's fixed number range."""
     number = int(PurePosixPath(entry['path']).parent.name.split('.')[0])
-    return number % SHARDS == SHARD
+    return reviewer(number) == REVIEWER_KEY
 
 
 def journal_path():
-    # A single-bot setup keeps the original file name; shards each get their own file
-    # so parallel jobs never edit (and never merge-conflict on) the same file.
-    return STATE / ('uploads.jsonl' if SHARDS == 1 else f'uploads.shard{SHARD}.jsonl')
+    # Each reviewer has a distinct journal; concurrent jobs never edit the same file.
+    return STATE / f'uploads.reviewer.{REVIEWER_KEY}.jsonl'
 
 
 def journal_files():
@@ -167,7 +166,8 @@ def journal_files():
     original = STATE / 'uploads.jsonl'
     if original.exists():
         files.append(original)
-    files.extend(sorted(STATE.glob('uploads.shard*.jsonl')))
+    files.extend(sorted(STATE.glob('uploads.shard*.jsonl')))  # legacy modulo-shard journals
+    files.extend(sorted(STATE.glob('uploads.reviewer.*.jsonl')))
     return files
 
 
@@ -190,6 +190,8 @@ def record(entry, status, **extra):
     STATE.mkdir(exist_ok=True)
     event = {k: entry[k] for k in ('path', 'sha')}
     event.update(status=status, time=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **extra)
+    if os.getenv('CHAT_ID'):
+        event['chat_id'] = os.environ['CHAT_ID']
     with journal_path().open('a') as f:
         f.write(json.dumps(event, ensure_ascii=True) + '\n')
         f.flush()
@@ -197,11 +199,13 @@ def record(entry, status, **extra):
     return event
 
 
-def pending(entry, old, legacy):
-    if entry['path'] in legacy:
-        return False  # legacy cache records paths, not content hashes
+def pending(entry, old, legacy, chat=None, legacy_chat=None):
+    chat = chat if chat is not None else os.getenv('CHAT_ID', '')
+    # Previous success records belong to their original destination only.
+    if entry['path'] in legacy and legacy_chat == chat:
+        return False
     event = old.get(entry['path'])
-    if not event:
+    if not event or event.get('chat_id') != chat:
         return True
     if event['status'] in ('inflight', 'uncertain'):
         return False  # requires human reconciliation, even if content changed
@@ -275,11 +279,8 @@ def main():
     parser.add_argument('--run', action='store_true', help='Send documents; default is read-only plan')
     parser.add_argument('--checkpoint', action='store_true')
     args = parser.parse_args()
-    if SHARDS < 1 or not 0 <= SHARD < SHARDS:
-        raise ValueError('SHARDS must be >= 1 and SHARD must satisfy 0 <= SHARD < SHARDS')
-    if args.checkpoint:
-        checkpoint()
-        return
+    if REVIEWER_KEY not in REVIEWERS:
+        raise ValueError('REVIEWER must be one of: fzm, ajk, mas, kf')
     repo = os.getenv('SOURCE_REPO', 'alireza5969/dmsr-supp')
     branch = os.getenv('SOURCE_BRANCH', 'main')
     chat = os.getenv('CHAT_ID', '')
@@ -287,14 +288,10 @@ def main():
         raise ValueError('TG_TOKEN and CHAT_ID are required')
     deadline = time.monotonic() + float(os.getenv('TIME_BUDGET_MIN', '300')) * 60
     meta_path = STATE / 'metadata.json'
-    if args.run and SHARDS > 1 and not meta_path.exists():
-        # Migration writes shared files; parallel jobs would race to create them.
-        raise ValueError('Complete the first live run with SHARDS=1 before sharding')
     identity = {'source_repo': repo, 'chat_id': chat}
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text())
-        if meta['source_repo'] != repo or (chat and meta['chat_id'] != chat):
-            raise ValueError('State belongs to a different source or chat')
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    if meta_path.exists() and meta.get('source_repo') != repo:
+        raise ValueError('State belongs to a different source repository')
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='dmsr-source-') as temp:
         commit, files = source_snapshot(repo, branch, Path(temp) / 'source')
@@ -306,12 +303,13 @@ def main():
     legacy_bytes = (legacy_path.read_bytes() if legacy_path.exists()
                     else fetch(repo, commit, 'upload_cache.txt', limit=20_000_000))
     legacy = {p.strip().removeprefix('./').replace('\\', '/') for p in legacy_bytes.decode().splitlines() if p.strip()}
+    legacy_chat = meta.get('chat_id')
     old = load_state()
     entries = inventory(files)
     owned = [e for e in entries if mine(e)]
-    queue = [e for e in owned if pending(e, old, legacy)]
+    queue = [e for e in owned if pending(e, old, legacy, chat=chat, legacy_chat=legacy_chat)]
     held = sum(e['status'] in ('inflight', 'uncertain') for e in old.values())
-    log(f'shard={SHARD}/{SHARDS} eligible={len(entries)} shard_eligible={len(owned)} '
+    log(f'reviewer={REVIEWER_KEY} eligible={len(entries)} reviewer_eligible={len(owned)} '
         f'legacy_uploaded={len(legacy)} pending={len(queue)} held_for_review={held}')
     if not args.run:
         for entry in queue[:5]:
