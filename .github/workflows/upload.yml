@@ -22,11 +22,12 @@ jobs:
     name: upload (${{ matrix.reviewer }})
     runs-on: ubuntu-24.04
     timeout-minutes: 340
+    # A failed reviewer shard is reported in its job steps, but does not fail
+    # the overall matrix workflow or prevent the other reviewers from running.
+    continue-on-error: true
     strategy:
-      # A problem in one bot's shard must not stop the others.
       fail-fast: false
       matrix:
-        # One fixed reviewer/channel/bot per job.
         reviewer: [fzm, ajk, mas, kf]
     env:
       SOURCE_REPO: alireza5969/dmsr-supp
@@ -63,9 +64,6 @@ jobs:
         id: upload
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         timeout-minutes: 320
-        # An upload problem is isolated to this reviewer. Preserve its failed
-        # step outcome for visibility, but do not fail the whole matrix workflow.
-        continue-on-error: true
         run: python3 uploader.py --run
       - name: Report upload error
         if: ${{ always() && steps.upload.outcome == 'failure' }}
