@@ -60,9 +60,17 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: python3 uploader.py
       - name: Upload
+        id: upload
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         timeout-minutes: 320
+        # An upload problem is isolated to this reviewer. Preserve its failed
+        # step outcome for visibility, but do not fail the whole matrix workflow.
+        continue-on-error: true
         run: python3 uploader.py --run
+      - name: Report upload error
+        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        run: |
+          echo "::warning::Upload failed for reviewer '${{ matrix.reviewer }}'. Progress was checkpointed and the recovery artifact will be retained."
       - name: Persist remaining progress
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) }}
         run: python3 uploader.py --checkpoint
